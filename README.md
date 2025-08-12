@@ -11,6 +11,7 @@ The density is rendered using ray marching techniques.
 ## Example 1
 
 $$f(x,y,z,t) = \sin\left(\pi\left(x+y+z+\frac{1}{4}\sin 2t\right)\right) e^{-5 \sqrt{x^2 + y^2 + z^2}}$$
+<br>
 Code:
 ```glsl
 return sin(3.14159*(x+y+z+0.25*sin(t*2.0))) * exp(-5.0*length(vec3(x,y,z)));
@@ -18,11 +19,8 @@ return sin(3.14159*(x+y+z+0.25*sin(t*2.0))) * exp(-5.0*length(vec3(x,y,z)));
 
 ## Example 2
 
-$$f(x,y,z,t) = \begin{cases}
-    \frac{5}{1000}\sqrt{x^2 + y^2 + z^2} & \sqrt{{(x-\frac{1}{2}\cos t)}^2 + {(y + \frac{1}{10} + \frac{1}{5}\sin 3t)}^2 + {(z + \frac{1}{2}\sin t)}^2} < \frac{1}{3} \\
-    \frac{5}{1000}\sqrt{x^2 + y^2 + z^2} & \sqrt{{(x-\frac{1}{2}\sin t)}^2 + {(y + \frac{1}{10} + \frac{1}{5}\cos 3t)}^2 + {(z + \frac{1}{2}\cos t)}^2} < \frac{1}{5} \\
-    \frac{5}{10000} & \text{otherwise}
-\end{cases}$$
+$$f(x,y,z,t) = \begin{cases}\frac{5}{1000}\sqrt{x^2 + y^2 + z^2} & \sqrt{{(x-\frac{1}{2}\cos t)}^2 + {(y + \frac{1}{10} + \frac{1}{5}\sin 3t)}^2 + {(z + \frac{1}{2}\sin t)}^2} < \frac{1}{3} \\ \frac{5}{1000}\sqrt{x^2 + y^2 + z^2} & \sqrt{{(x-\frac{1}{2}\sin t)}^2 + {(y + \frac{1}{10} + \frac{1}{5}\cos 3t)}^2 + {(z + \frac{1}{2}\cos t)}^2} < \frac{1}{5} \\ \frac{5}{10000} & \text{otherwise}\end{cases}$$
+<br>
 Code:
 ```glsl
 if (length(vec3(x-cos(t) * 0.5,y + sin(t*3.0) * 0.2 + 0.1,z+sin(t) * 0.5)) < 0.3) {
