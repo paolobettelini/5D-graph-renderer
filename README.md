@@ -1,3 +1,10 @@
+<script type="text/x-mathjax-config">
+MathJax.Hub.Register.StartupHook('TeX Jax Ready', function () {
+  MathJax.InputJax.TeX.prefilterHooks.Add(function (data) {
+    data.math = data.math.replace(/^% <!\[CDATA\[/, '').replace(/%\]\]>$/, '');
+  });
+});
+</script>
 # 5-dimensional graph renderer
 Consider a function $f\colon\mathbb{R}^4 \to \mathbb{R}$. The graph of $f$
 lives in the $(x,y,z,t,f(x,y,z,t)) \in \mathbb{R}^5$ plane.
@@ -10,6 +17,10 @@ The density is rendered using ray marching techniques.
 
 ## Example 1
 
+
+https://github.com/user-attachments/assets/1f14867e-7f72-42b7-9472-da8c6397f36c
+
+
 $$f(x,y,z,t) = \sin\left(\pi\left(x+y+z+\frac{1}{4}\sin 2t\right)\right) e^{-5 \sqrt{x^2 + y^2 + z^2}}$$
 <br>
 Code:
@@ -19,7 +30,9 @@ return sin(3.14159*(x+y+z+0.25*sin(t*2.0))) * exp(-5.0*length(vec3(x,y,z)));
 
 ## Example 2
 
-$$f(x,y,z,t) = \begin{cases}\frac{5}{1000}\sqrt{x^2 + y^2 + z^2} & \sqrt{{(x-\frac{1}{2}\cos t)}^2 + {(y + \frac{1}{10} + \frac{1}{5}\sin 3t)}^2 + {(z + \frac{1}{2}\sin t)}^2} < \frac{1}{3} \\ \frac{5}{1000}\sqrt{x^2 + y^2 + z^2} & \sqrt{{(x-\frac{1}{2}\sin t)}^2 + {(y + \frac{1}{10} + \frac{1}{5}\cos 3t)}^2 + {(z + \frac{1}{2}\cos t)}^2} < \frac{1}{5} \\ \frac{5}{10000} & \text{otherwise}\end{cases}$$
+
+https://github.com/user-attachments/assets/cd9e1b30-c974-4c84-ac39-a50a0419b848
+
 <br>
 Code:
 ```glsl
