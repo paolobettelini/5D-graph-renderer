@@ -1,10 +1,3 @@
-<script type="text/x-mathjax-config">
-MathJax.Hub.Register.StartupHook('TeX Jax Ready', function () {
-  MathJax.InputJax.TeX.prefilterHooks.Add(function (data) {
-    data.math = data.math.replace(/^% <!\[CDATA\[/, '').replace(/%\]\]>$/, '');
-  });
-});
-</script>
 # 5-dimensional graph renderer
 Consider a function $f\colon\mathbb{R}^4 \to \mathbb{R}$. The graph of $f$
 lives in the $(x,y,z,t,f(x,y,z,t)) \in \mathbb{R}^5$ plane.
@@ -35,6 +28,7 @@ https://github.com/user-attachments/assets/cd9e1b30-c974-4c84-ac39-a50a0419b848
 
 <br>
 Code:
+
 ```glsl
 if (length(vec3(x-cos(t) * 0.5,y + sin(t*3.0) * 0.2 + 0.1,z+sin(t) * 0.5)) < 0.3) {
     return 1.0 / length(vec3(x,y,z)) * 0.005;
