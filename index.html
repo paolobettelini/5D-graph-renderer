@@ -15,6 +15,7 @@
             font-family: 'Inter', sans-serif;
             overflow: hidden;
         }
+        /* UI card */
         #ui {
             position: fixed;
             left: 8px;
@@ -22,10 +23,22 @@
             z-index: 10;
             background: rgba(0, 0, 0, 0.6);
             backdrop-filter: blur(6px);
-            padding: 1rem;
+            padding: 1rem 0.5rem 1rem 1rem;
             border-radius: 0.5rem;
-            max-width: 360px;
+            width: 360px;
+            min-width: 240px;
+            max-width: 90vw;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 0.5rem;
+            align-items: stretch;
+        }
+        /* content area that can scroll */
+        #uiContent {
+            overflow: auto;
+            max-height: calc(100vh - 32px);
+            padding-right: 8px; /* room for resizer */
+            width: 100%;
         }
         label {
             display: block;
@@ -33,7 +46,7 @@
             margin-top: 0.5rem;
             color: #ccc;
         }
-        input[type=text], textarea {
+        input[type=text], input[type=number], textarea {
             width: 100%;
             box-sizing: border-box;
             background: #2a2a2a;
@@ -83,56 +96,151 @@
             color: #999;
             font-size: 12px;
         }
+
+        /* resizer bar on the right edge of the UI */
+        #resizer {
+            width: 8px;
+            cursor: col-resize;
+            background: linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.06));
+            border-top-right-radius: 6px;
+            border-bottom-right-radius: 6px;
+            margin-right: 4px;
+            align-self: stretch;
+        }
+
+        /* small toggle row */
+        .toggleRow {
+            display:flex;
+            align-items:center;
+            gap:0.5rem;
+            margin-top:0.5rem;
+        }
+        .smallMuted { color: #999; font-size: 0.75rem; }
+
+        /* ensure inputs wrap nicely on small widths */
+        .split {
+            display:flex;
+            gap:0.5rem;
+        }
+        .split > * { flex:1; min-width: 0; }
+
     </style>
 </head>
 <body>
-<div id="ui">
-    <h1 class="text-xl font-bold mb-2 text-white">5D Graph</h1>
-    <p class="small text-gray-400 mb-2">Volume raymarching</p>
+<div id="ui" aria-label="Controls">
+    <div id="uiContent">
+        <h1 class="text-xl font-bold mb-2 text-white">5D Graph</h1>
+        <p class="small text-gray-400 mb-2">Volume raymarching</p>
 
-    <label>Function of the form f(x,y,z,t) — use variabile <code>x,y,z,t</code> in the selected domain:</label>
-    <textarea id="fn" class="mb-2">return sin(3.14159*(x+y+z+0.25*sin(t*2.0))) * exp(-5.0*length(vec3(x,y,z)));</textarea>
+        <label>Function of the form f(x,y,z,t) — use variabile <code>x,y,z,t</code> in the selected domain:</label>
+        <textarea id="fn" class="mb-2">
+            float radius = 0.4 + 0.05 * sin(t * 0.7); // helix radius varies
+            float twistSpeed = 1.0;                   // rotation speed
+            float helixHeight = 1.0;                  // vertical scale
 
-    <label class="small">Domain (min — max for each spatial variable). Values are mapped to [-1,1] internally.</label>
-    <div class="row mb-1">
-        <input id="xmin" type="text" value="-1" />
-        <input id="xmax" type="text" value="1" />
-    </div>
-    <div class="row mb-1">
-        <input id="ymin" type="text" value="-1" />
-        <input id="ymax" type="text" value="1" />
-    </div>
-    <div class="row">
-        <input id="zmin" type="text" value="-1" />
-        <input id="zmax" type="text" value="1" />
-    </div>
-    
-    <label class="small mt-2">Alpha scale (max value = no transparency)</label>
-    <input id="valscale" type="text" value="1.0" class="mb-2" />
+            // Rotate coordinates over time
+            float angle = twistSpeed * t + z * 3.0;
+            float hx1 = cos(angle) * radius;
+            float hy1 = sin(angle) * radius;
 
-    <label class="small">Quality (raymarching steps)</label>
-    <div class="row">
-        <input id="steps" type="text" value="128" />
-        <input id="stepSize" type="text" value="0.0125" />
-    </div>
+            float hx2 = cos(angle + 3.1416) * radius; // opposite strand
+            float hy2 = sin(angle + 3.1416) * radius;
 
-    <label class="small mt-2">Time control</label>
-    <div class="row">
-        <input id="speed" type="text" value="1.0" />
-        <button id="pause">Pause</button>
-        <button id="reset">Reset t</button>
+            // Distance to each strand's center line
+            float d1 = length(vec2(x - hx1, y - hy1 * helixHeight));
+            float d2 = length(vec2(x - hx2, y - hy2 * helixHeight));
+
+            // Gaussian falloff for smooth density (0<f&lt;1)
+            float density1 = exp(-20.0 * d1 * d1);
+            float density2 = exp(-20.0 * d2 * d2);
+
+            float pulse = 0.5 + 0.5 * sin(t * 3.0);
+            return clamp((density1 + density2) * pulse, 0.0, 1.0);
+        </textarea>
+
+        <label class="small">Domain (min — max for each spatial variable). Values are mapped to [-1,1] internally.</label>
+        <div class="row mb-1">
+            <input id="xmin" type="text" value="-1" />
+            <input id="xmax" type="text" value="1" />
+        </div>
+        <div class="row mb-1">
+            <input id="ymin" type="text" value="-1" />
+            <input id="ymax" type="text" value="1" />
+        </div>
+        <div class="row">
+            <input id="zmin" type="text" value="-1" />
+            <input id="zmax" type="text" value="1" />
+        </div>
+
+        <label class="small mt-2">Alpha scale (max value = no transparency)</label>
+        <input id="valscale" type="text" value="1.0" class="mb-2" />
+
+        <label class="small">Quality (raymarching steps)</label>
+        <div class="row">
+            <input id="steps" type="text" value="128" />
+            <input id="stepSize" type="text" value="0.0125" />
+        </div>
+
+        <label class="small mt-2">Time control</label>
+        <div class="row">
+            <input id="speed" type="text" value="1.0" />
+            <button id="pause">Pause</button>
+            <button id="reset">Reset t</button>
+        </div>
+
+        <label class="small mt-2">Anti-banding: jitter</label>
+        <div class="row">
+            <input id="jitter" type="text" value="0.5" />
+            <input id="opacityBoost" type="text" value="1.0" />
+        </div>
+
+        <hr class="my-2" />
+
+        <div class="toggleRow">
+            <input id="lightEnabled" type="checkbox" checked />
+            <label for="lightEnabled" class="smallMuted">Light enabled</label>
+            <button id="lightToggleBtn" style="margin-left:auto;">Toggle</button>
+        </div>
+
+        <div id="lightManualInputs" style="margin-top:6px;">
+            <label class="small">Light position (world space)</label>
+            <div class="row">
+                <input id="lightX" type="text" value="2.5" />
+                <input id="lightY" type="text" value="0.5" />
+                <input id="lightZ" type="text" value="0.0" />
+            </div>
+        </div>
+
+        <div class="split" style="margin-top:6px;">
+            <div>
+                <label class="small">intensity</label>
+                <input id="lightIntensity" type="number" step="0.1" value="5.0" />
+            </div>
+            <div>
+                <label class="small">lightSteps</label>
+                <input id="lightSteps" type="number" step="1" value="24" />
+            </div>
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+            <div>
+                <label class="small">attenuation</label>
+                <input id="lightAttenuation" type="number" step="0.1" value="1.0" />
+            </div>
+            <div>
+                <label class="small">min alpha threshold</label>
+                <input id="minAlpha" type="number" step="0.01" value="0.001" />
+            </div>
+        </div>
+
+        <div class="mt-4 flex gap-2">
+            <button id="compile" class="w-full">Apply / Compile</button>
+        </div>
+
     </div>
-    
-    <label class="small mt-2">Anti-banding: jitter</label>
-    <div class="row">
-        <input id="jitter" type="text" value="0.5" />
-        <input id="opacityBoost" type="text" value="1.0" />
-    </div>
-    
-    <div class="mt-4 flex gap-2">
-        <button id="compile" class="w-full">Apply / Compile</button>
-    </div>
+    <div id="resizer" title="Drag to resize"></div>
 </div>
+
 <canvas id="gl"></canvas>
 
 <script>
@@ -203,7 +311,7 @@ function mat4Invert(m) {
     return out;
 }
 
-// ----- Setup GL -----
+// GL setup
 const canvas = document.getElementById('gl');
 const gl = canvas.getContext('webgl2', { antialias: true, alpha: true });
 if (!gl) {
@@ -223,7 +331,7 @@ function resize() {
 window.addEventListener('resize', () => { devicePixelRatio = window.devicePixelRatio || 1; resize(); });
 resize();
 
-// ----- Shaders -----
+// Shaders
 const quadVS = `#version 300 es
 precision highp float;
 in vec2 aPos;
@@ -233,6 +341,7 @@ void main(){
     gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
+// Fragment template
 const fragTemplate = `#version 300 es
 precision highp float;
 out vec4 outColor;
@@ -252,6 +361,12 @@ uniform vec3 camRight;
 uniform vec3 camUp;
 uniform vec3 camForward;
 uniform float camFov;
+
+// light uniforms (light is placed by JS on camera-right side)
+uniform vec3 lightPos;
+uniform float lightIntensity;
+uniform int lightSteps;
+uniform float lightAttenuation;
 
 // --- user function will be injected here ---
 
@@ -277,10 +392,58 @@ bool intersectBox(vec3 ro, vec3 rd, out float tmin, out float tmax){
     return tmax >= max(tmin, 0.0);
 }
 
+// compute domain sample from world-space pos in [-1,1]
+vec3 posToDomain(vec3 pos){
+    vec3 d = (pos * 0.5) + 0.5;
+    return mix(domainMin, domainMax, d);
+}
+
+// compute normal via small central differences in *normalized* cube coordinates (pos in [-1,1])
+vec3 estimateNormal(vec3 pos, float tt){
+    float eps = 0.01; // normalized space
+    vec3 p0 = pos;
+    vec3 pd = posToDomain(p0);
+    float v = user_fn(pd, tt);
+    vec3 px = posToDomain(p0 + vec3(eps,0.0,0.0));
+    vec3 py = posToDomain(p0 + vec3(0.0,eps,0.0));
+    vec3 pz = posToDomain(p0 + vec3(0.0,0.0,eps));
+    float vx = user_fn(px, tt);
+    float vy = user_fn(py, tt);
+    float vz = user_fn(pz, tt);
+    vec3 g = vec3(vx - v, vy - v, vz - v) / eps;
+    if(length(g) < 1e-6) return vec3(0.0, 0.0, 1.0);
+    return normalize(g);
+}
+
+// compute shadow/transmittance from a world-space point towards lightPos
+float computeShadow(vec3 pos, float tt, float maxDist){
+    vec3 toL = lightPos - pos;
+    float dist = length(toL);
+    if(dist <= 1e-4) return 1.0;
+    vec3 dir = toL / dist;
+    float t = 0.01; // start a bit off the sample to avoid self-shadowing
+    int ls = max(1, min(lightSteps, 64));
+    float step = dist / float(ls);
+    float trans = 1.0;
+    for(int i = 0; i < 128; i++){
+        if(i >= ls) break;
+        vec3 p = pos + dir * (t + float(i) * step);
+        if(any(greaterThan(abs(p), vec3(1.0)))) {
+            break;
+        }
+        vec3 pd = posToDomain(p);
+        float v = user_fn(pd, tt);
+        float a = clamp(abs(v) / valScale, 0.0, 1.0);
+        trans *= exp(-a * lightAttenuation * step * float(steps));
+        if(trans < 0.01) return 0.0;
+    }
+    return trans;
+}
+
 void main() {
     // NDC coords
     vec2 ndc = vUV * 2.0 - 1.0;
-    ndc.y *= -1.0; // quadVS/vUV convention -> flip Y so +Y is up
+    ndc.y *= -1.0;
 
     float aspect = iResolution.x / iResolution.y;
     float px = ndc.x * aspect * tan(camFov * 0.5);
@@ -306,16 +469,26 @@ void main() {
 
     for (int i = 0; i < 2000; i++) {
         if (i >= steps) break;
-        vec3 pos = ro + (t + float(i) * dt) * rd;
-        vec3 d = (pos * 0.5) + 0.5;           // map from [-1,1] -> [0,1]
-        vec3 pd = mix(domainMin, domainMax, d);
+        float curT = t + float(i) * dt;
+        vec3 pos = ro + curT * rd;
+        vec3 pd = posToDomain(pos);
         float val = user_fn(pd, iTime);
         float alpha = clamp(abs(val) / valScale, 0.0, 1.0);
         alpha = 1.0 - exp(-alpha * opacityBoost * 6.0 * dt * float(steps));
-        vec3 color = vec3(alpha);
-        accum.rgb += (1.0 - accum.a) * color;
-        accum.a += (1.0 - accum.a) * alpha;
-        if (accum.a >= maxAlpha) break;
+
+        if(alpha > 0.0001){
+            vec3 N = estimateNormal(pos, iTime);
+            vec3 Ldir = normalize(lightPos - pos);
+            float lam = max(dot(normalize(N), Ldir), 0.0);
+            float shadow = computeShadow(pos, iTime, length(lightPos - pos));
+            vec3 baseColor = vec3( (val*0.5)+0.5 );
+            float ambient = 0.18;
+            float diffuse = lam * lightIntensity * shadow;
+            vec3 shaded = baseColor * (ambient + diffuse);
+            accum.rgb += (1.0 - accum.a) * shaded * alpha;
+            accum.a += (1.0 - accum.a) * alpha;
+            if (accum.a >= maxAlpha) break;
+        }
     }
 
     vec3 outcol = pow(accum.rgb, vec3(1.0 / 2.2));
@@ -333,7 +506,6 @@ function compileShader(type, src) {
     }
     return s;
 }
-
 function linkProgram(vs, fs) {
     const p = gl.createProgram();
     gl.attachShader(p, vs);
@@ -419,23 +591,18 @@ function sanitizeToGLSL(expr) {
 makePrograms(sanitizeToGLSL(defaultFn));
 
 const cubeEdges = new Float32Array([
-  // back face (z = -1)
-  -1,-1,-1,  1,-1,-1,   // v0 - v1
-   1,-1,-1,  1, 1,-1,   // v1 - v2
-   1, 1,-1, -1, 1,-1,   // v2 - v3
-  -1, 1,-1, -1,-1,-1,   // v3 - v0
-
-  // front face (z = +1)
-  -1,-1, 1,  1,-1, 1,   // v4 - v5
-   1,-1, 1,  1, 1, 1,   // v5 - v6
-   1, 1, 1, -1, 1, 1,   // v6 - v7
-  -1, 1, 1, -1,-1, 1,   // v7 - v4
-
-  // vertical edges
-  -1,-1,-1, -1,-1, 1,   // v0 - v4
-   1,-1,-1,  1,-1, 1,   // v1 - v5
-   1, 1,-1,  1, 1, 1,   // v2 - v6
-  -1, 1,-1, -1, 1, 1    // v3 - v7
+  -1,-1,-1,  1,-1,-1,
+   1,-1,-1,  1, 1,-1,
+   1, 1,-1, -1, 1,-1,
+  -1, 1,-1, -1,-1,-1,
+  -1,-1, 1,  1,-1, 1,
+   1,-1, 1,  1, 1, 1,
+   1, 1, 1, -1, 1, 1,
+  -1, 1, 1, -1,-1, 1,
+  -1,-1,-1, -1,-1, 1,
+   1,-1,-1,  1,-1, 1,
+   1, 1,-1,  1, 1, 1,
+  -1, 1,-1, -1, 1, 1
 ]);
 const wireVBO = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, wireVBO);
@@ -473,10 +640,9 @@ canvas.addEventListener('pointermove', (e) => {
 });
 canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    camDistance *= Math.pow(1.005, e.deltaY);
+    camDistance *= Math.pow(1.001, e.deltaY);
     camDistance = Math.max(1.5, Math.min(40, camDistance));
 });
-
 function getCamera() {
     const cx = target[0] + camDistance * Math.cos(pitch) * Math.sin(yaw);
     const cy = target[1] + camDistance * Math.sin(pitch);
@@ -513,15 +679,52 @@ pauseBtn.addEventListener('click', () => {
 });
 
 resetBtn.addEventListener('click', () => {
-    t0 = performance.now() / 1000.0;
-    tPause = null;
-    paused = false;
-    pauseBtn.textContent = 'Pause';
+    const now = performance.now() / 1000.0;
+    if (paused) {
+        // keep paused, reset paused-time to 0
+        tPause = 0.0;
+    } else {
+        // running -> reset the base time so animation restarts at 0
+        t0 = now;
+        tPause = null;
+    }
 });
 
+/* allow dragging the UI resizer to change width */
+const uiEl = document.getElementById('ui');
+const resizer = document.getElementById('resizer');
+let resizing = false;
+resizer.addEventListener('pointerdown', (e) => {
+    resizing = true;
+    resizer.setPointerCapture(e.pointerId);
+});
+window.addEventListener('pointermove', (e) => {
+    if (!resizing) return;
+    // compute new width clamped
+    const minW = 220;
+    const maxW = Math.min(window.innerWidth - 20, 900);
+    const newW = Math.max(minW, Math.min(maxW, e.clientX - uiEl.getBoundingClientRect().left));
+    uiEl.style.width = newW + 'px';
+});
+window.addEventListener('pointerup', (e) => {
+    if (!resizing) return;
+    resizing = false;
+    try { resizer.releasePointerCapture(e.pointerId); } catch (e) {}
+});
+
+/* light UI toggles */
+const lightEnabledInput = document.getElementById('lightEnabled');
+const lightToggleBtn = document.getElementById('lightToggleBtn');
+
+lightToggleBtn.addEventListener('click', () => {
+    lightEnabledInput.checked = !lightEnabledInput.checked;
+});
+
+/* time base */
 let t0 = performance.now() / 1000.0;
 let lastFrame = performance.now() / 1000.0;
 
+/* render loop */
 function render() {
     resize();
     const now = performance.now() / 1000.0;
@@ -532,7 +735,6 @@ function render() {
     const curTime = paused ? (tPause !== null ? tPause : (now - t0) * uiSpeed) : (now - t0) * uiSpeed;
 
     const eye = getCamera();
-
     const upWorld = [0, 1, 0];
 
     // forward = normalize(target - eye)
@@ -552,7 +754,6 @@ function render() {
     ];
     let rl = Math.hypot(right[0], right[1], right[2]);
 
-    // if forward is almost parallel to upWorld, choose an alternative up to avoid degeneration
     if (rl < 1e-6) {
         const altUp = [0, 0, 1];
         right = [
@@ -623,6 +824,26 @@ function render() {
         if (locF) gl.uniform3fv(locF, new Float32Array(camForwardArr));
         const locFov = gl.getUniformLocation(renderProgram, 'camFov');
         if (locFov) gl.uniform1f(locFov, Math.PI / 4.0);
+
+        // Light uniforms: read from UI
+        const enabled = !!lightEnabledInput.checked;
+        const lx = parseFloat(document.getElementById('lightX').value) || 0.0;
+        const ly = parseFloat(document.getElementById('lightY').value) || 0.0;
+        const lz = parseFloat(document.getElementById('lightZ').value) || 0.0;
+        let lightPos = [lx, ly, lz];
+
+        const intensity = enabled ? (parseFloat(document.getElementById('lightIntensity').value) || 1.0) : 0.0;
+        const lsteps = parseInt(document.getElementById('lightSteps').value) || 24;
+        const latt = parseFloat(document.getElementById('lightAttenuation').value) || 8.0;
+
+        const lp = gl.getUniformLocation(renderProgram, 'lightPos');
+        if (lp) gl.uniform3fv(lp, new Float32Array(lightPos));
+        const lip = gl.getUniformLocation(renderProgram, 'lightIntensity');
+        if (lip) gl.uniform1f(lip, intensity);
+        const lstepsLoc = gl.getUniformLocation(renderProgram, 'lightSteps');
+        if (lstepsLoc) gl.uniform1i(lstepsLoc, lsteps);
+        const lattLoc = gl.getUniformLocation(renderProgram, 'lightAttenuation');
+        if (lattLoc) gl.uniform1f(lattLoc, latt);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
