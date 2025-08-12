@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <title>5D Graph visualizer - Volume Raymarching</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        html, body {
+            height: 100%;
+            margin: 0;
+            background: #111;
+            color: #ddd;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        #ui {
+            position: fixed;
+            left: 8px;
+            top: 8px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(6px);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            max-width: 360px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        label {
+            display: block;
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+            color: #ccc;
+        }
+        input[type=text], textarea {
+            width: 100%;
+            box-sizing: border-box;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #fff;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            font-family: monospace;
+            font-size: 0.875rem;
+        }
+        textarea {
+            height: 84px;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .row {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .row > * {
+            flex: 1;
+        }
+        button {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #fff;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-size: 0.875rem;
+        }
+        button:hover {
+            background: #3a3a3a;
+        }
+        .small {
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+        footer {
+            position: fixed;
+            right: 8px;
+            bottom: 8px;
+            color: #999;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+<div id="ui">
+    <h1 class="text-xl font-bold mb-2 text-white">5D Graph</h1>
+    <p class="small text-gray-400 mb-2">Volume raymarching</p>
+
+    <label>Function of the form f(x,y,z,t) — use variabile <code>x,y,z,t</code> in the selected domain:</label>
+    <textarea id="fn" class="mb-2">return sin(3.14159*(x+y+z+0.25*sin(t*2.0))) * exp(-5.0*length(vec3(x,y,z)));</textarea>
+
+    <label class="small">Domain (min — max for each spatial variable). Values are mapped to [-1,1] internally.</label>
+    <div class="row mb-1">
+        <input id="xmin" type="text" value="-1" />
+        <input id="xmax" type="text" value="1" />
+    </div>
+    <div class="row mb-1">
+        <input id="ymin" type="text" value="-1" />
+        <input id="ymax" type="text" value="1" />
+    </div>
+    <div class="row">
+        <input id="zmin" type="text" value="-1" />
+        <input id="zmax" type="text" value="1" />
+    </div>
+    
+    <label class="small mt-2">Alpha scale (max value = no transparency)</label>
+    <input id="valscale" type="text" value="1.0" class="mb-2" />
+
+    <label class="small">Quality (raymarching steps)</label>
+    <div class="row">
+        <input id="steps" type="text" value="128" />
+        <input id="stepSize" type="text" value="0.0125" />
+    </div>
+
+    <label class="small mt-2">Time control</label>
+    <div class="row">
+        <input id="speed" type="text" value="1.0" />
+        <button id="pause">Pause</button>
+        <button id="reset">Reset t</button>
+    </div>
+    
+    <label class="small mt-2">Anti-banding: jitter</label>
+    <div class="row">
+        <input id="jitter" type="text" value="0.5" />
+        <input id="opacityBoost" type="text" value="1.0" />
+    </div>
+    
+    <div class="mt-4 flex gap-2">
+        <button id="compile" class="w-full">Apply / Compile</button>
+    </div>
+</div>
+<canvas id="gl"></canvas>
+
+<script>
+function mat4Identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
+function mat4Multiply(a, b) {
+    const out = new Float32Array(16);
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            let s = 0;
+            for (let k = 0; k < 4; k++) s += a[i * 4 + k] * b[k * 4 + j];
+            out[i * 4 + j] = s;
+        }
+    }
+    return out;
+}
+function mat4LookAt(eye, center, up) {
+    const z0 = eye[0] - center[0], z1 = eye[1] - center[1], z2 = eye[2] - center[2];
+    let zl = Math.hypot(z0, z1, z2);
+    const zx = z0 / zl, zy = z1 / zl, zz = z2 / zl;
+    let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+    let xl = Math.hypot(xx, xy, xz);
+    xx /= xl; xy /= xl; xz /= xl;
+    let yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+    const out = new Float32Array(16);
+    out[0] = xx; out[1] = yx; out[2] = zx; out[3] = 0;
+    out[4] = xy; out[5] = yy; out[6] = zy; out[7] = 0;
+    out[8] = xz; out[9] = yz; out[10] = zz; out[11] = 0;
+    out[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
+    out[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
+    out[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
+    out[15] = 1;
+    return out;
+}
+function mat4Perspective(fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2);
+    const out = new Float32Array(16);
+    out[0] = f / aspect; out[1] = 0; out[2] = 0; out[3] = 0;
+    out[4] = 0; out[5] = f; out[6] = 0; out[7] = 0;
+    out[8] = 0; out[9] = 0; out[10] = (far + near) / (near - far); out[11] = -1;
+    out[12] = 0; out[13] = 0; out[14] = (2 * far * near) / (near - far); out[15] = 0;
+    return out;
+}
+
+function mat4Invert(m) {
+    const a = new Float32Array(m);
+    const out = new Float32Array(16);
+    let inv = new Float32Array(16);
+    inv[0] = a[5] * a[10] * a[15] - a[5] * a[11] * a[14] - a[9] * a[6] * a[15] + a[9] * a[7] * a[14] + a[13] * a[6] * a[11] - a[13] * a[7] * a[10];
+    inv[4] = -a[4] * a[10] * a[15] + a[4] * a[11] * a[14] + a[8] * a[6] * a[15] - a[8] * a[7] * a[14] - a[12] * a[6] * a[11] + a[12] * a[7] * a[10];
+    inv[8] = a[4] * a[9] * a[15] - a[4] * a[11] * a[13] - a[8] * a[5] * a[15] + a[8] * a[7] * a[13] + a[12] * a[5] * a[11] - a[12] * a[7] * a[9];
+    inv[12] = -a[4] * a[9] * a[14] + a[4] * a[10] * a[13] + a[8] * a[5] * a[14] - a[8] * a[6] * a[13] - a[12] * a[5] * a[10] + a[12] * a[6] * a[9];
+    inv[1] = -a[1] * a[10] * a[15] + a[1] * a[11] * a[14] + a[9] * a[2] * a[15] - a[9] * a[3] * a[14] - a[13] * a[2] * a[11] + a[13] * a[3] * a[10];
+    inv[5] = a[0] * a[10] * a[15] - a[0] * a[11] * a[14] - a[8] * a[2] * a[15] + a[8] * a[3] * a[14] + a[12] * a[2] * a[11] - a[12] * a[3] * a[10];
+    inv[9] = -a[0] * a[9] * a[15] + a[0] * a[11] * a[13] + a[8] * a[1] * a[15] - a[8] * a[3] * a[13] - a[12] * a[1] * a[11] + a[12] * a[3] * a[9];
+    inv[13] = a[0] * a[9] * a[14] - a[0] * a[10] * a[13] - a[8] * a[1] * a[14] + a[8] * a[2] * a[13] + a[12] * a[1] * a[10] - a[12] * a[2] * a[9];
+    inv[2] = a[1] * a[6] * a[15] - a[1] * a[7] * a[14] - a[5] * a[2] * a[15] + a[5] * a[3] * a[14] + a[13] * a[2] * a[7] - a[13] * a[3] * a[6];
+    inv[6] = -a[0] * a[6] * a[15] + a[0] * a[7] * a[14] + a[4] * a[2] * a[15] - a[4] * a[3] * a[14] - a[12] * a[2] * a[7] + a[12] * a[3] * a[6];
+    inv[10] = a[0] * a[5] * a[15] - a[0] * a[7] * a[13] - a[4] * a[1] * a[15] + a[4] * a[3] * a[13] + a[12] * a[1] * a[7] - a[12] * a[3] * a[5];
+    inv[14] = -a[0] * a[5] * a[14] + a[0] * a[6] * a[13] + a[4] * a[1] * a[14] - a[4] * a[2] * a[13] - a[12] * a[1] * a[6] + a[12] * a[2] * a[5];
+    inv[3] = -a[1] * a[6] * a[11] + a[1] * a[7] * a[10] + a[5] * a[2] * a[11] - a[5] * a[3] * a[10] - a[9] * a[2] * a[7] + a[9] * a[3] * a[6];
+    inv[7] = a[0] * a[6] * a[11] - a[0] * a[7] * a[10] - a[4] * a[2] * a[11] + a[4] * a[3] * a[10] + a[8] * a[2] * a[7] - a[8] * a[3] * a[6];
+    inv[11] = -a[0] * a[5] * a[11] + a[0] * a[7] * a[9] + a[4] * a[1] * a[11] - a[4] * a[3] * a[9] - a[8] * a[1] * a[7] + a[8] * a[3] * a[5];
+    inv[15] = a[0] * a[5] * a[10] - a[0] * a[6] * a[9] - a[4] * a[1] * a[10] + a[4] * a[2] * a[9] + a[8] * a[1] * a[6] - a[8] * a[2] * a[5];
+    let det = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
+    if (det === 0) return null;
+    det = 1.0 / det;
+    for (let i = 0; i < 16; i++) out[i] = inv[i] * det;
+    return out;
+}
+
+// ----- Setup GL -----
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias: true, alpha: true });
+if (!gl) {
+    alert('WebGL2 not available for this browser.');
+    throw 'no webgl2';
+}
+
+let devicePixelRatio = window.devicePixelRatio || 1;
+function resize() {
+    const w = Math.floor(window.innerWidth * devicePixelRatio), h = Math.floor(window.innerHeight * devicePixelRatio);
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    gl.viewport(0, 0, w, h);
+}
+window.addEventListener('resize', () => { devicePixelRatio = window.devicePixelRatio || 1; resize(); });
+resize();
+
+// ----- Shaders -----
+const quadVS = `#version 300 es
+precision highp float;
+in vec2 aPos;
+out vec2 vUV;
+void main(){
+    vUV = aPos * 0.5 + 0.5;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const fragTemplate = `#version 300 es
+precision highp float;
+out vec4 outColor;
+in vec2 vUV;
+uniform vec2 iResolution;
+uniform float iTime;
+uniform vec3 domainMin;
+uniform vec3 domainMax;
+uniform float valScale;
+uniform int steps;
+uniform float jitter;
+uniform float opacityBoost;
+
+// camera uniforms
+uniform vec3 camPos;
+uniform vec3 camRight;
+uniform vec3 camUp;
+uniform vec3 camForward;
+uniform float camFov;
+
+// --- user function will be injected here ---
+
+uint hash(uvec2 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * 1664525u;
+    return v.x ^ v.y;
+}
+float hashf(vec2 p) {
+    uvec2 u = uvec2(floatBitsToUint(p.x), floatBitsToUint(p.y));
+    return float(hash(u) % 1000u) / 1000.0;
+}
+
+// Ray-box intersection (cube from -1..1)
+bool intersectBox(vec3 ro, vec3 rd, out float tmin, out float tmax){
+    vec3 invD = 1.0/rd;
+    vec3 t0s = (-1.0 - ro) * invD;
+    vec3 t1s = ( 1.0 - ro) * invD;
+    vec3 tsm = min(t0s,t1s);
+    vec3 tbm = max(t0s,t1s);
+    tmin = max(max(tsm.x, tsm.y), tsm.z);
+    tmax = min(min(tbm.x, tbm.y), tbm.z);
+    return tmax >= max(tmin, 0.0);
+}
+
+void main() {
+    // NDC coords
+    vec2 ndc = vUV * 2.0 - 1.0;
+    ndc.y *= -1.0; // quadVS/vUV convention -> flip Y so +Y is up
+
+    float aspect = iResolution.x / iResolution.y;
+    float px = ndc.x * aspect * tan(camFov * 0.5);
+    float py = ndc.y * tan(camFov * 0.5);
+
+    vec3 ro = camPos;
+    vec3 rd = normalize(px * camRight + py * camUp + camForward);
+
+    float tEnter, tExit;
+    if(!intersectBox(ro, rd, tEnter, tExit)){
+        outColor = vec4(0.0);
+        return;
+    }
+
+    float t = tEnter;
+    float totalLen = tExit - t;
+    float dt = totalLen / float(max(1, steps));
+    float j = (hashf(gl_FragCoord.xy) - 0.5) * jitter * dt;
+    t += j;
+
+    vec4 accum = vec4(0.0);
+    float maxAlpha = 0.995;
+
+    for (int i = 0; i < 2000; i++) {
+        if (i >= steps) break;
+        vec3 pos = ro + (t + float(i) * dt) * rd;
+        vec3 d = (pos * 0.5) + 0.5;           // map from [-1,1] -> [0,1]
+        vec3 pd = mix(domainMin, domainMax, d);
+        float val = user_fn(pd, iTime);
+        float alpha = clamp(abs(val) / valScale, 0.0, 1.0);
+        alpha = 1.0 - exp(-alpha * opacityBoost * 6.0 * dt * float(steps));
+        vec3 color = vec3(alpha);
+        accum.rgb += (1.0 - accum.a) * color;
+        accum.a += (1.0 - accum.a) * alpha;
+        if (accum.a >= maxAlpha) break;
+    }
+
+    vec3 outcol = pow(accum.rgb, vec3(1.0 / 2.2));
+    outColor = vec4(outcol, accum.a);
+}`;
+
+function compileShader(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        const info = gl.getShaderInfoLog(s);
+        console.error('Shader source:\n' + src);
+        throw 'Shader compile error: ' + info;
+    }
+    return s;
+}
+
+function linkProgram(vs, fs) {
+    const p = gl.createProgram();
+    gl.attachShader(p, vs);
+    gl.attachShader(p, fs);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        throw 'Program link error: ' + gl.getProgramInfoLog(p);
+    }
+    return p;
+}
+
+const quadVBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
+const quadVerts = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
+gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+
+let renderProgram = null;
+let wireProgram = null;
+
+function makePrograms(userExpr) {
+    if (renderProgram) { try { gl.deleteProgram(renderProgram); } catch (e) { } }
+    const fnBody = `float user_fn(vec3 p, float tt) { float x = p.x; float y = p.y; float z = p.z; float t = tt; ${userExpr} }`;
+    console.log(fnBody);
+    const fsSrc = fragTemplate.replace('// --- user function will be injected here ---', fnBody);
+    try {
+        const vs = compileShader(gl.VERTEX_SHADER, quadVS);
+        const fs = compileShader(gl.FRAGMENT_SHADER, fsSrc);
+        renderProgram = linkProgram(vs, fs);
+    } catch (e) {
+        alert('Shader compilation error:\n' + e);
+        console.error(e);
+        return;
+    }
+
+    if (wireProgram) { try { gl.deleteProgram(wireProgram); } catch (e) { } }
+    const wireVS = `#version 300 es
+precision highp float;
+in vec3 aPos;
+uniform vec3 camPos;
+uniform vec3 camRight;
+uniform vec3 camUp;
+uniform vec3 camForward;
+uniform float camFov;
+uniform vec2 iResolution;
+void main(){
+    vec3 p = aPos;
+
+    vec3 v = p - camPos;
+    float x = dot(v, camRight);
+    float y = dot(v, camUp);
+    float z = dot(v, camForward);
+
+    // prevent zero division
+    if (z <= 0.0001) z = 0.0001;
+
+    float aspect = iResolution.x / iResolution.y;
+    float tanHalf = tan(camFov * 0.5);
+
+    // NDC coords
+    float ndc_x = x / (z * tanHalf * aspect);
+    float ndc_y = y / (z * tanHalf);
+
+    // flip Y ?
+    ndc_y = -ndc_y;
+
+    gl_Position = vec4(ndc_x, ndc_y, 0.0, 1.0);
+}`;
+    const wireFS = `#version 300 es
+precision highp float;
+out vec4 o;
+void main(){ o = vec4(1.0, 1.0, 1.0, 1.0); }`;
+    const wvs = compileShader(gl.VERTEX_SHADER, wireVS);
+    const wfs = compileShader(gl.FRAGMENT_SHADER, wireFS);
+    wireProgram = linkProgram(wvs, wfs);
+}
+
+const defaultFn = document.getElementById('fn').value;
+function sanitizeToGLSL(expr) {
+    expr = expr.trim();
+    expr = expr.replace(/\^/g, 'pow');
+    return expr;
+}
+makePrograms(sanitizeToGLSL(defaultFn));
+
+const cubeEdges = new Float32Array([
+  // back face (z = -1)
+  -1,-1,-1,  1,-1,-1,   // v0 - v1
+   1,-1,-1,  1, 1,-1,   // v1 - v2
+   1, 1,-1, -1, 1,-1,   // v2 - v3
+  -1, 1,-1, -1,-1,-1,   // v3 - v0
+
+  // front face (z = +1)
+  -1,-1, 1,  1,-1, 1,   // v4 - v5
+   1,-1, 1,  1, 1, 1,   // v5 - v6
+   1, 1, 1, -1, 1, 1,   // v6 - v7
+  -1, 1, 1, -1,-1, 1,   // v7 - v4
+
+  // vertical edges
+  -1,-1,-1, -1,-1, 1,   // v0 - v4
+   1,-1,-1,  1,-1, 1,   // v1 - v5
+   1, 1,-1,  1, 1, 1,   // v2 - v6
+  -1, 1,-1, -1, 1, 1    // v3 - v7
+]);
+const wireVBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, wireVBO);
+gl.bufferData(gl.ARRAY_BUFFER, cubeEdges, gl.STATIC_DRAW);
+
+let camDistance = 3.0;
+let yaw = 0.5;
+let pitch = -0.5;
+let target = [0, 0, 0];
+let isDragging = false, lastX = 0, lastY = 0;
+
+canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); });
+canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+});
+canvas.addEventListener('pointerup', (e) => {
+    isDragging = false;
+    try { canvas.releasePointerCapture(e.pointerId); } catch (e) { }
+});
+canvas.addEventListener('pointercancel', () => {
+    isDragging = false;
+});
+canvas.addEventListener('pointermove', (e) => {
+    if (!isDragging || e.buttons !== 1) return;
+    const dx = (e.clientX - lastX);
+    const dy = (e.clientY - lastY);
+    lastX = e.clientX;
+    lastY = e.clientY;
+    yaw += dx * 0.005;
+    pitch += dy * 0.005;
+    pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
+});
+canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    camDistance *= Math.pow(1.005, e.deltaY);
+    camDistance = Math.max(1.5, Math.min(40, camDistance));
+});
+
+function getCamera() {
+    const cx = target[0] + camDistance * Math.cos(pitch) * Math.sin(yaw);
+    const cy = target[1] + camDistance * Math.sin(pitch);
+    const cz = target[2] + camDistance * Math.cos(pitch) * Math.cos(yaw);
+    return [cx, cy, cz];
+}
+
+const compileBtn = document.getElementById('compile');
+const pauseBtn = document.getElementById('pause');
+const resetBtn = document.getElementById('reset');
+
+compileBtn.addEventListener('click', () => {
+    try {
+        const expr = document.getElementById('fn').value;
+        makePrograms(sanitizeToGLSL(expr));
+    } catch (e) {}
+});
+
+let paused = false;
+let tPause = null;
+pauseBtn.addEventListener('click', () => {
+    const now = performance.now() / 1000.0;
+    const uiSpeed = parseFloat(document.getElementById('speed').value) || 1.0;
+    if (!paused) {
+        tPause = (now - t0) * uiSpeed;
+        paused = true;
+        pauseBtn.textContent = 'Resume';
+    } else {
+        t0 = now - (tPause / uiSpeed);
+        tPause = null;
+        paused = false;
+        pauseBtn.textContent = 'Pause';
+    }
+});
+
+resetBtn.addEventListener('click', () => {
+    t0 = performance.now() / 1000.0;
+    tPause = null;
+    paused = false;
+    pauseBtn.textContent = 'Pausa';
+});
+
+let t0 = performance.now() / 1000.0;
+let lastFrame = performance.now() / 1000.0;
+
+function render() {
+    resize();
+    const now = performance.now() / 1000.0;
+    const dt = now - lastFrame;
+    lastFrame = now;
+
+    const uiSpeed = parseFloat(document.getElementById('speed').value) || 1.0;
+    const curTime = paused ? (tPause !== null ? tPause : (now - t0) * uiSpeed) : (now - t0) * uiSpeed;
+
+    const eye = getCamera();
+
+    const upWorld = [0, 1, 0];
+
+    // forward = normalize(target - eye)
+    let forward = [
+        target[0] - eye[0],
+        target[1] - eye[1],
+        target[2] - eye[2]
+    ];
+    let fl = Math.hypot(forward[0], forward[1], forward[2]) || 1.0;
+    forward = [forward[0] / fl, forward[1] / fl, forward[2] / fl];
+
+    // right = normalize(cross(forward, upWorld))
+    let right = [
+        forward[1] * upWorld[2] - forward[2] * upWorld[1],
+        forward[2] * upWorld[0] - forward[0] * upWorld[2],
+        forward[0] * upWorld[1] - forward[1] * upWorld[0]
+    ];
+    let rl = Math.hypot(right[0], right[1], right[2]);
+
+    // if forward is almost parallel to upWorld, choose an alternative up to avoid degeneration
+    if (rl < 1e-6) {
+        const altUp = [0, 0, 1];
+        right = [
+            forward[1] * altUp[2] - forward[2] * altUp[1],
+            forward[2] * altUp[0] - forward[0] * altUp[2],
+            forward[0] * altUp[1] - forward[1] * altUp[0]
+        ];
+        rl = Math.hypot(right[0], right[1], right[2]) || 1.0;
+    }
+    right = [right[0] / rl, right[1] / rl, right[2] / rl];
+
+    // up = cross(right, forward)
+    const up = [
+        right[1] * forward[2] - right[2] * forward[1],
+        right[2] * forward[0] - right[0] * forward[2],
+        right[0] * forward[1] - right[1] * forward[0]
+    ];
+
+    const camPosArr = eye.slice();
+
+    // invert right and up before passing them as uniforms
+    const camRightArr = [-right[0], -right[1], -right[2]];
+    const camUpArr    = [-up[0],    -up[1],    -up[2]];
+    const camForwardArr = forward;
+
+    gl.clearColor(0.0, 0.0, 0.0, 0.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // Raymarching pass
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    if (renderProgram) {
+        gl.useProgram(renderProgram);
+
+        // attrib quad
+        const ap = gl.getAttribLocation(renderProgram, 'aPos');
+        if (ap >= 0) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
+            gl.enableVertexAttribArray(ap);
+            gl.vertexAttribPointer(ap, 2, gl.FLOAT, false, 0, 0);
+        }
+
+        gl.uniform2f(gl.getUniformLocation(renderProgram, 'iResolution'), canvas.width, canvas.height);
+        gl.uniform1f(gl.getUniformLocation(renderProgram, 'iTime'), curTime);
+
+        const dmin = [parseFloat(document.getElementById('xmin').value) || -1,
+                      parseFloat(document.getElementById('ymin').value) || -1,
+                      parseFloat(document.getElementById('zmin').value) || -1];
+        const dmax = [parseFloat(document.getElementById('xmax').value) || 1,
+                      parseFloat(document.getElementById('ymax').value) || 1,
+                      parseFloat(document.getElementById('zmax').value) || 1];
+        gl.uniform3fv(gl.getUniformLocation(renderProgram, 'domainMin'), dmin);
+        gl.uniform3fv(gl.getUniformLocation(renderProgram, 'domainMax'), dmax);
+        gl.uniform1f(gl.getUniformLocation(renderProgram, 'valScale'), parseFloat(document.getElementById('valscale').value) || 1.0);
+        gl.uniform1i(gl.getUniformLocation(renderProgram, 'steps'), parseInt(document.getElementById('steps').value) || 128);
+        gl.uniform1f(gl.getUniformLocation(renderProgram, 'jitter'), parseFloat(document.getElementById('jitter').value) || 0.5);
+        gl.uniform1f(gl.getUniformLocation(renderProgram, 'opacityBoost'), parseFloat(document.getElementById('opacityBoost').value) || 1.0);
+
+        const locPos = gl.getUniformLocation(renderProgram, 'camPos');
+        if (locPos) gl.uniform3fv(locPos, new Float32Array(camPosArr));
+        const locR = gl.getUniformLocation(renderProgram, 'camRight');
+        if (locR) gl.uniform3fv(locR, new Float32Array(camRightArr));
+        const locU = gl.getUniformLocation(renderProgram, 'camUp');
+        if (locU) gl.uniform3fv(locU, new Float32Array(camUpArr));
+        const locF = gl.getUniformLocation(renderProgram, 'camForward');
+        if (locF) gl.uniform3fv(locF, new Float32Array(camForwardArr));
+        const locFov = gl.getUniformLocation(renderProgram, 'camFov');
+        if (locFov) gl.uniform1f(locFov, Math.PI / 4.0);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    // Wireframe overlay
+    gl.disable(gl.BLEND);
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    if (wireProgram) {
+        gl.useProgram(wireProgram);
+
+        const apw = gl.getAttribLocation(wireProgram, 'aPos');
+        if (apw >= 0) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, wireVBO);
+            gl.enableVertexAttribArray(apw);
+            gl.vertexAttribPointer(apw, 3, gl.FLOAT, false, 0, 0);
+        }
+
+        const w_locPos = gl.getUniformLocation(wireProgram, 'camPos');
+        if (w_locPos) gl.uniform3fv(w_locPos, new Float32Array(camPosArr));
+        const w_locR = gl.getUniformLocation(wireProgram, 'camRight');
+        if (w_locR) gl.uniform3fv(w_locR, new Float32Array(camRightArr));
+        const w_locU = gl.getUniformLocation(wireProgram, 'camUp');
+        if (w_locU) gl.uniform3fv(w_locU, new Float32Array(camUpArr));
+        const w_locF = gl.getUniformLocation(wireProgram, 'camForward');
+        if (w_locF) gl.uniform3fv(w_locF, new Float32Array(camForwardArr));
+        const w_locFov = gl.getUniformLocation(wireProgram, 'camFov');
+        if (w_locFov) gl.uniform1f(w_locFov, Math.PI / 4.0);
+        const w_res = gl.getUniformLocation(wireProgram, 'iResolution');
+        if (w_res) gl.uniform2f(w_res, canvas.width, canvas.height);
+
+        try { gl.lineWidth(2.0); } catch(e){ }
+        gl.drawArrays(gl.LINES, 0, 24);
+        gl.depthMask(true);
+    }
+
+    requestAnimationFrame(render);
+}
+
+render();
+</script>
+</body>
+</html>
