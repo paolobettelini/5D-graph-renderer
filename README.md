@@ -26,6 +26,8 @@ return sin(3.14159*(x+y+z+0.25*sin(t*2.0))) * exp(-5.0*length(vec3(x,y,z)));
 
 https://github.com/user-attachments/assets/cd9e1b30-c974-4c84-ac39-a50a0419b848
 
+![rendered function](./media/example2_rendered.png)
+
 <br>
 Code:
 
