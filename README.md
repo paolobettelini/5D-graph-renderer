@@ -1,11 +1,9 @@
 # 5-dimensional graph renderer
-Consider a function $f\colon\mathbb{R}^4 \to \mathbb{R}$. The graph of $f$
-lives in the $(x,y,z,t,f(x,y,z,t)) \in \mathbb{R}^5$ plane.
+
+Consider a function $f\colon\mathbb{R}^4 \to \mathbb{R}$. The graph of $f$ lives in the $(x,y,z,t,f(x,y,z,t)) \in \mathbb{R}^5$ space.
 The graph is represented using a density cube.
-The spatial parameters $(x,y,z)$ are represented at the position
-$(x,y,z)$ in the cube, while $t$ varies over time.
-This means that the value of $f(x,y,z,t)$ for a given set of inputs,
-is represented by the transparency value at the coordinates $(x,y,z)$ of the cube at the instant $t$.
+The spatial parameters $(x,y,z)$ are represented at the position $(x,y,z)$ in the cube, while $t$ varies over time.
+This means that the value of $f(x,y,z,t)$ for a given set of inputs is represented by the transparency value at the coordinates $(x,y,z)$ of the cube at the instant $t$.
 The density is rendered using ray marching techniques.
 
 ![rendered function](./media/website.png)
@@ -14,25 +12,75 @@ The density is rendered using ray marching techniques.
 
 ## Sinusoidal slices
 
-![rendered function](./media/sinusoidal_slices.png)
+$$
+f(x,y,z,t)=
+\sin\left(\pi\left(x+y+z+\frac14\sin(2t)\right)\right)
+e^{-5\sqrt{x^2+y^2+z^2}}.
+$$
+
 ```glsl
 return sin(3.14159*(x+y+z+0.25*sin(t*2.0))) * exp(-5.0*length(vec3(x,y,z)));
 ```
 
 ## Moving spheres
 
-![rendered function](./media/moving_spheres.png)
+$$
+f(x,y,z,t)=
+\begin{cases}
+\dfrac{0.005}{\sqrt{x^2+y^2+z^2}},
+&
+\sqrt{\left(x-\frac12\cos t\right)^2+\left(y+\frac15\sin(3t)+\frac1{10}\right)^2+\left(z+\frac12\sin t\right)^2}<0.3,
+\\[1em]
+\dfrac{0.005}{\sqrt{x^2+y^2+z^2}},
+&
+\sqrt{\left(x-\frac12\sin t\right)^2+\left(y+\frac15\cos(2t)-\frac1{10}\right)^2+\left(z+\frac12\cos t\right)^2}<0.2,
+\\[1em]
+0.0005,
+&
+\text{otherwise}.
+\end{cases}
+$$
+
 ```glsl
-if (length(vec3(x-cos(t) * 0.5,y + sin(t*3.0) * 0.2 + 0.1,z+sin(t) * 0.5)) < 0.3) {
+if (length(vec3(x-cos(t)*0.5, y+sin(t*3.0)*0.2+0.1, z+sin(t)*0.5)) < 0.3) {
     return 1.0 / length(vec3(x,y,z)) * 0.005;
 }
-if (length(vec3(x-sin(t) * 0.5,y + cos(t*2.0) * 0.2 - 0.1,z+cos(t) * 0.5)) < 0.2) {
+
+if (length(vec3(x-sin(t)*0.5, y+cos(t*2.0)*0.2-0.1, z+cos(t)*0.5)) < 0.2) {
     return 1.0 / length(vec3(x,y,z)) * 0.005;
 }
+
 return 0.0005;
 ```
 
 ## Pulsating double-helix
+
+Let
+
+$$
+\rho(t)=0.4+0.05\sin(0.7t), \qquad \theta(z,t)=t+3z.
+$$
+
+The squared distances from the two strands are
+
+$$
+d_1^2=\left(x-\rho(t)\cos\theta\right)^2+\left(y-\rho(t)\sin\theta\right)^2,
+$$
+
+$$
+d_2^2=\left(x+\rho(t)\cos\theta\right)^2+\left(y+\rho(t)\sin\theta\right)^2.
+$$
+
+Then
+
+$$
+f(x,y,z,t)=
+\operatorname{clamp}\left(
+\left(e^{-20d_1^2}+e^{-20d_2^2}\right)
+\left(\frac12+\frac12\sin(3t)\right),
+0,1
+\right).
+$$
 
 ```glsl
 float radius = 0.4 + 0.05 * sin(t * 0.7); // helix radius varies
@@ -41,9 +89,9 @@ float helixHeight = 1.0;                  // vertical scale
 
 // Rotate coordinates over time
 float angle = twistSpeed * t + z * 3.0;
+
 float hx1 = cos(angle) * radius;
 float hy1 = sin(angle) * radius;
-
 float hx2 = cos(angle + 3.1416) * radius; // opposite strand
 float hy2 = sin(angle + 3.1416) * radius;
 
@@ -57,23 +105,68 @@ float density2 = exp(-20.0 * d2 * d2);
 
 // Combine strands and make it pulse
 float pulse = 0.5 + 0.5 * sin(t * 3.0);
+
 return clamp((density1 + density2) * pulse, 0.0, 1.0);
 ```
 
 ## Pulsating torus
 
+Let
+
+$$
+R(t)=0.5+0.1\sin(0.8t)
+$$
+
+and
+
+$$
+\mathbf c(t)=
+\begin{pmatrix}
+0.3\sin(0.5t)\\
+0.2\sin(0.9t)\\
+0.3\cos(0.4t)
+\end{pmatrix}.
+$$
+
+Define
+
+$$
+\mathbf p=
+\begin{pmatrix}
+x\\y\\z
+\end{pmatrix}
+-\mathbf c(t)
+$$
+
+and
+
+$$
+q=\sqrt{\left(\sqrt{p_x^2+p_z^2}-R(t)\right)^2+p_y^2}.
+$$
+
+Then
+
+$$
+f(x,y,z,t)=
+\operatorname{clamp}\left(
+e^{-40q^2}
+\left(0.6+0.4\sin\left(2t+5\|\mathbf p\|\right)\right),
+0,1
+\right).
+$$
+
 ```glsl
 float R = 0.5 + 0.1 * sin(t * 0.8); // main radius
-float r = 0.15 + 0.05 * cos(t * 1.5); // tube radius
 
 // Center of torus drifts
 vec3 center = vec3(0.3 * sin(t * 0.5),
-                    0.2 * sin(t * 0.9),
-                    0.3 * cos(t * 0.4));
+                   0.2 * sin(t * 0.9),
+                   0.3 * cos(t * 0.4));
+
 vec3 pp = vec3(x, y, z) - center;
 
 // Distance to torus surface
-float q = length(vec2(length(pp.xz) - R, p.y));
+float q = length(vec2(length(pp.xz) - R, pp.y));
 
 // Smooth Gaussian falloff from surface
 float density = exp(-40.0 * q * q);
@@ -86,10 +179,72 @@ return clamp(density * pulse, 0.0, 1.0);
 
 ## Spiky ball
 
+Let
+
+$$
+\mathbf c(t)=
+\begin{pmatrix}
+0.2\sin(0.4t)\\
+0.2\cos(0.3t)\\
+0.2\sin(0.5t+1)
+\end{pmatrix},
+\qquad
+\mathbf p=
+\begin{pmatrix}
+x\\y\\z
+\end{pmatrix}
+-\mathbf c(t).
+$$
+
+Define
+
+$$
+r=\|\mathbf p\|,
+\qquad
+\widehat{\mathbf p}=\frac{\mathbf p}{\|\mathbf p\|}.
+$$
+
+The surface perturbation is
+
+$$
+s(\mathbf p,t)=
+0.02\left[
+\sin\left(15\,\widehat{\mathbf p}\cdot
+\begin{pmatrix}
+3.1\\5.2\\7.3
+\end{pmatrix}
++3t\right)
++
+\sin\left(12\,\widehat{\mathbf p}\cdot
+\begin{pmatrix}
+-4.2\\2.8\\6.5
+\end{pmatrix}
+-2.5t\right)
+\right].
+$$
+
+Let
+
+$$
+d=\left|r-\left(0.35+s(\mathbf p,t)\right)\right|.
+$$
+
+Then
+
+$$
+f(x,y,z,t)=
+\operatorname{clamp}\left(
+e^{-300d^2}
+\left(0.8+0.2\sin(20t+10r)\right),
+0,1
+\right).
+$$
+
 ```glsl
 vec3 center = vec3(0.2 * sin(t * 0.4),
-                    0.2 * cos(t * 0.3),
-                    0.2 * sin(t * 0.5 + 1.0));
+                   0.2 * cos(t * 0.3),
+                   0.2 * sin(t * 0.5 + 1.0));
+
 vec3 pp = vec3(x, y, z) - center;
 
 // Base sphere radius
@@ -101,7 +256,7 @@ vec3 dir = normalize(pp);
 
 // Spiky surface: use dot product patterns for pseudo-noise
 float spikes = sin(dot(dir, vec3(3.1, 5.2, 7.3)) * 15.0 + t * 3.0)
-                + sin(dot(dir, vec3(-4.2, 2.8, 6.5)) * 12.0 - t * 2.5);
+             + sin(dot(dir, vec3(-4.2, 2.8, 6.5)) * 12.0 - t * 2.5);
 
 spikes *= 0.02; // spike height
 
@@ -115,4 +270,366 @@ float density = exp(-300.0 * surfaceDist * surfaceDist);
 float flicker = 0.8 + 0.2 * sin(t * 20.0 + len * 10.0);
 
 return clamp(density * flicker, 0.0, 1.0);
+```
+
+## Concentric spheres
+
+Let
+
+$$
+r=\sqrt{x^2+y^2+z^2}+10^{-4},
+\qquad
+\phi=\operatorname{atan2}(z,x),
+\qquad
+\theta=\operatorname{atan2}\left(y,\sqrt{x^2+z^2}\right).
+$$
+
+Define
+
+$$
+S(r,t)=e^{-18\sin^2(15r-1.8t)},
+$$
+
+$$
+P(\phi,\theta,t)=
+0.35+
+0.65\left(
+\frac12+\frac12\cos(6\phi+4\theta+0.7t)
+\right)^4,
+$$
+
+and
+
+$$
+E(r)=e^{-1.15r^2}.
+$$
+
+Then
+
+$$
+f(x,y,z,t)=
+\operatorname{clamp}\left(
+S(r,t)P(\phi,\theta,t)E(r),
+0,1
+\right).
+$$
+
+```glsl
+vec3 q = vec3(x, y, z);
+
+float r = length(q) + 0.0001;
+
+float shells =
+    exp(
+        -18.0 *
+        pow(
+            sin(15.0*r - 1.8*t),
+            2.0
+        )
+    );
+
+float phi = atan(q.z, q.x);
+float theta = atan(q.y, length(q.xz));
+
+float petals =
+    0.35 +
+    0.65 *
+    pow(
+        0.5 +
+        0.5*cos(6.0*phi + 4.0*theta + 0.7*t),
+        4.0
+    );
+
+float envelope = exp(-1.15*r*r);
+
+return clamp(shells * petals * envelope, 0.0, 1.0);
+```
+
+## Moving Möbius strip
+
+Let
+
+$$
+\rho=\sqrt{x^2+z^2},
+\qquad
+\alpha=\operatorname{atan2}(z,x),
+\qquad
+u=\rho-0.52,
+$$
+
+and
+
+$$
+\tau=\frac{\alpha}{2}+0.35t.
+$$
+
+Define the rotated coordinates
+
+$$
+a=y\cos\tau-u\sin\tau,
+\qquad
+b=y\sin\tau+u\cos\tau.
+$$
+
+Then
+
+$$
+S=e^{-260a^2},
+\qquad
+W=e^{-24b^2},
+$$
+
+and
+
+$$
+B=
+0.55+
+0.45\left(
+\frac12+\frac12\cos(8\alpha-2t)
+\right)^4.
+$$
+
+Therefore,
+
+$$
+f(x,y,z,t)=
+\operatorname{clamp}(SWB,0,1).
+$$
+
+```glsl
+vec3 q = vec3(x, y, z);
+
+float R = 0.52;
+
+float rho = length(q.xz);
+float ang = atan(q.z, q.x);
+
+float u = rho - R;
+
+float twist = 0.5*ang + 0.35*t;
+
+float ct = cos(twist);
+float st = sin(twist);
+
+float a = q.y*ct - u*st;
+float b = q.y*st + u*ct;
+
+float sheet = exp(-260.0*a*a);
+float width = exp(-24.0*b*b);
+
+float stripes =
+    0.55 +
+    0.45*pow(
+        0.5 + 0.5*cos(8.0*ang - 2.0*t),
+        4.0
+    );
+
+return clamp(sheet * width * stripes, 0.0, 1.0);
+```
+
+## Black hole + accretion disk
+
+Let
+
+$$
+\alpha=0.12t
+$$
+
+and rotate the \(xz\)-plane according to
+
+$$
+\begin{pmatrix}
+q_x\\q_z
+\end{pmatrix}
+=
+\begin{pmatrix}
+\cos\alpha & \sin\alpha\\
+-\sin\alpha & \cos\alpha
+\end{pmatrix}
+\begin{pmatrix}
+x\\z
+\end{pmatrix},
+\qquad
+q_y=y.
+$$
+
+Define
+
+$$
+r=\sqrt{q_x^2+q_z^2}+10^{-4},
+\qquad
+\theta=\operatorname{atan2}(q_z,q_x).
+$$
+
+The spiral modulation is
+
+$$
+A=
+0.45+
+0.55\left(
+\frac12+\frac12\sin(11\theta-18r+2.2t)
+\right)^3.
+$$
+
+The accretion disk is
+
+$$
+D=e^{-100q_y^2}e^{-7(r-0.48)^2}A.
+$$
+
+The photon ring is
+
+$$
+P=e^{-350(r-0.27)^2}e^{-180q_y^2}.
+$$
+
+Let
+
+$$
+u=
+\operatorname{clamp}
+\left(
+\frac{r-0.18}{0.11},
+0,1
+\right),
+$$
+
+so that the GLSL `smoothstep` term is
+
+$$
+H=u^2(3-2u).
+$$
+
+The polar jet is
+
+$$
+J=
+e^{-40(q_x^2+q_z^2)}
+e^{-1.4q_y^2}
+\left(
+0.55+0.45\sin^2(11q_y-3t)
+\right).
+$$
+
+Finally,
+
+$$
+f(x,y,z,t)=
+\operatorname{clamp}\left(
+DH+0.9P+0.32J,
+0,1
+\right).
+$$
+
+```glsl
+vec3 q = vec3(x, y, z);
+
+float a = 0.12 * t;
+
+float ca = cos(a);
+float sa = sin(a);
+
+q.xz = mat2(ca, -sa, sa, ca) * q.xz;
+
+float r = length(q.xz) + 0.0001;
+float ang = atan(q.z, q.x);
+
+float spiral =
+    0.45 +
+    0.55 * pow(
+        0.5 + 0.5*sin(11.0*ang - 18.0*r + 2.2*t),
+        3.0
+    );
+
+float disk =
+    exp(-100.0*q.y*q.y) *
+    exp(-7.0*pow(r - 0.48, 2.0)) *
+    spiral;
+
+float photonRing =
+    exp(-350.0*pow(r - 0.27, 2.0)) *
+    exp(-180.0*q.y*q.y);
+
+float hole = smoothstep(0.18, 0.29, r);
+
+float jet =
+    exp(-40.0*(q.x*q.x + q.z*q.z)) *
+    exp(-1.4*q.y*q.y) *
+    (0.55 + 0.45*pow(sin(11.0*q.y - 3.0*t), 2.0));
+
+float density =
+      disk * hole
+    + 0.9 * photonRing
+    + 0.32 * jet;
+
+return clamp(density, 0.0, 1.0);
+```
+
+## 5D crystal structure
+
+Let
+
+$$
+\varphi=0.45t,
+\qquad
+X=4.5x+\varphi,
+\qquad
+Y=4.5y-0.7\varphi,
+\qquad
+Z=4.5z+0.4\varphi.
+$$
+
+Define
+
+$$
+d=
+\sin X\sin Y\sin Z
++\sin X\cos Y\cos Z
++\cos X\sin Y\cos Z
++\cos X\cos Y\sin Z.
+$$
+
+Let
+
+$$
+r=\sqrt{x^2+y^2+z^2},
+$$
+
+$$
+S=e^{-35d^2},
+\qquad
+H=e^{-0.28r^2},
+\qquad
+P=0.75+0.25\sin(2.5t+8r).
+$$
+
+Then
+
+$$
+f(x,y,z,t)=
+\operatorname{clamp}(SHP,0,1).
+$$
+
+```glsl
+float ph = 0.45 * t;
+
+float X = 4.5*x + ph;
+float Y = 4.5*y - 0.7*ph;
+float Z = 4.5*z + 0.4*ph;
+
+float d =
+      sin(X)*sin(Y)*sin(Z)
+    + sin(X)*cos(Y)*cos(Z)
+    + cos(X)*sin(Y)*cos(Z)
+    + cos(X)*cos(Y)*sin(Z);
+
+float shell = exp(-35.0 * d*d);
+
+float r = length(vec3(x,y,z));
+
+float halo = exp(-0.28 * r*r);
+
+float pulse = 0.75 + 0.25*sin(2.5*t + 8.0*r);
+
+return clamp(shell * halo * pulse, 0.0, 1.0);
 ```
