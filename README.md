@@ -45,11 +45,9 @@ $$
 if (length(vec3(x-cos(t)*0.5, y+sin(t*3.0)*0.2+0.1, z+sin(t)*0.5)) < 0.3) {
     return 1.0 / length(vec3(x,y,z)) * 0.005;
 }
-
 if (length(vec3(x-sin(t)*0.5, y+cos(t*2.0)*0.2-0.1, z+cos(t)*0.5)) < 0.2) {
     return 1.0 / length(vec3(x,y,z)) * 0.005;
 }
-
 return 0.0005;
 ```
 
@@ -75,7 +73,7 @@ Then
 
 $$
 f(x,y,z,t)=
-\operatorname{clamp}\left(
+\mathrm{clamp}\left(
 \left(e^{-20d_1^2}+e^{-20d_2^2}\right)
 \left(\frac12+\frac12\sin(3t)\right),
 0,1
@@ -86,26 +84,20 @@ $$
 float radius = 0.4 + 0.05 * sin(t * 0.7); // helix radius varies
 float twistSpeed = 1.0;                   // rotation speed
 float helixHeight = 1.0;                  // vertical scale
-
 // Rotate coordinates over time
 float angle = twistSpeed * t + z * 3.0;
-
 float hx1 = cos(angle) * radius;
 float hy1 = sin(angle) * radius;
 float hx2 = cos(angle + 3.1416) * radius; // opposite strand
 float hy2 = sin(angle + 3.1416) * radius;
-
 // Distance to each strand's center line
 float d1 = length(vec2(x - hx1, y - hy1 * helixHeight));
 float d2 = length(vec2(x - hx2, y - hy2 * helixHeight));
-
 // Gaussian falloff for smooth density (0<f<1)
 float density1 = exp(-20.0 * d1 * d1);
 float density2 = exp(-20.0 * d2 * d2);
-
 // Combine strands and make it pulse
 float pulse = 0.5 + 0.5 * sin(t * 3.0);
-
 return clamp((density1 + density2) * pulse, 0.0, 1.0);
 ```
 
@@ -133,7 +125,9 @@ Define
 $$
 \mathbf p=
 \begin{pmatrix}
-x\\y\\z
+x\\
+y\\
+z
 \end{pmatrix}
 -\mathbf c(t)
 $$
@@ -148,32 +142,26 @@ Then
 
 $$
 f(x,y,z,t)=
-\operatorname{clamp}\left(
+\mathrm{clamp}\left(
 e^{-40q^2}
-\left(0.6+0.4\sin\left(2t+5\|\mathbf p\|\right)\right),
+\left(0.6+0.4\sin\left(2t+5\lVert\mathbf p\rVert\right)\right),
 0,1
 \right).
 $$
 
 ```glsl
 float R = 0.5 + 0.1 * sin(t * 0.8); // main radius
-
 // Center of torus drifts
 vec3 center = vec3(0.3 * sin(t * 0.5),
                    0.2 * sin(t * 0.9),
                    0.3 * cos(t * 0.4));
-
 vec3 pp = vec3(x, y, z) - center;
-
 // Distance to torus surface
 float q = length(vec2(length(pp.xz) - R, pp.y));
-
 // Smooth Gaussian falloff from surface
 float density = exp(-40.0 * q * q);
-
 // Add a soft breathing/pulsating effect
 float pulse = 0.6 + 0.4 * sin(t * 2.0 + length(pp) * 5.0);
-
 return clamp(density * pulse, 0.0, 1.0);
 ```
 
@@ -191,7 +179,9 @@ $$
 \qquad
 \mathbf p=
 \begin{pmatrix}
-x\\y\\z
+x\\
+y\\
+z
 \end{pmatrix}
 -\mathbf c(t).
 $$
@@ -199,9 +189,9 @@ $$
 Define
 
 $$
-r=\|\mathbf p\|,
+r=\lVert\mathbf p\rVert,
 \qquad
-\widehat{\mathbf p}=\frac{\mathbf p}{\|\mathbf p\|}.
+\widehat{\mathbf p}=\frac{\mathbf p}{\lVert\mathbf p\rVert}.
 $$
 
 The surface perturbation is
@@ -211,13 +201,17 @@ s(\mathbf p,t)=
 0.02\left[
 \sin\left(15\,\widehat{\mathbf p}\cdot
 \begin{pmatrix}
-3.1\\5.2\\7.3
+3.1\\
+5.2\\
+7.3
 \end{pmatrix}
 +3t\right)
 +
 \sin\left(12\,\widehat{\mathbf p}\cdot
 \begin{pmatrix}
--4.2\\2.8\\6.5
+-4.2\\
+2.8\\
+6.5
 \end{pmatrix}
 -2.5t\right)
 \right].
@@ -233,7 +227,7 @@ Then
 
 $$
 f(x,y,z,t)=
-\operatorname{clamp}\left(
+\mathrm{clamp}\left(
 e^{-300d^2}
 \left(0.8+0.2\sin(20t+10r)\right),
 0,1
@@ -244,31 +238,22 @@ $$
 vec3 center = vec3(0.2 * sin(t * 0.4),
                    0.2 * cos(t * 0.3),
                    0.2 * sin(t * 0.5 + 1.0));
-
 vec3 pp = vec3(x, y, z) - center;
-
 // Base sphere radius
 float baseRadius = 0.35;
-
 // Direction and length
 float len = length(pp);
 vec3 dir = normalize(pp);
-
 // Spiky surface: use dot product patterns for pseudo-noise
 float spikes = sin(dot(dir, vec3(3.1, 5.2, 7.3)) * 15.0 + t * 3.0)
              + sin(dot(dir, vec3(-4.2, 2.8, 6.5)) * 12.0 - t * 2.5);
-
 spikes *= 0.02; // spike height
-
 // Distance from spiky surface
 float surfaceDist = abs(len - (baseRadius + spikes));
-
 // Sharp Gaussian around the spiky shell
 float density = exp(-300.0 * surfaceDist * surfaceDist);
-
 // Subtle flicker for energy effect
 float flicker = 0.8 + 0.2 * sin(t * 20.0 + len * 10.0);
-
 return clamp(density * flicker, 0.0, 1.0);
 ```
 
@@ -279,9 +264,9 @@ Let
 $$
 r=\sqrt{x^2+y^2+z^2}+10^{-4},
 \qquad
-\phi=\operatorname{atan2}(z,x),
+\phi=\mathrm{atan2}(z,x),
 \qquad
-\theta=\operatorname{atan2}\left(y,\sqrt{x^2+z^2}\right).
+\theta=\mathrm{atan2}\left(y,\sqrt{x^2+z^2}\right).
 $$
 
 Define
@@ -308,7 +293,7 @@ Then
 
 $$
 f(x,y,z,t)=
-\operatorname{clamp}\left(
+\mathrm{clamp}\left(
 S(r,t)P(\phi,\theta,t)E(r),
 0,1
 \right).
@@ -316,9 +301,7 @@ $$
 
 ```glsl
 vec3 q = vec3(x, y, z);
-
 float r = length(q) + 0.0001;
-
 float shells =
     exp(
         -18.0 *
@@ -327,10 +310,8 @@ float shells =
             2.0
         )
     );
-
 float phi = atan(q.z, q.x);
 float theta = atan(q.y, length(q.xz));
-
 float petals =
     0.35 +
     0.65 *
@@ -339,9 +320,7 @@ float petals =
         0.5*cos(6.0*phi + 4.0*theta + 0.7*t),
         4.0
     );
-
 float envelope = exp(-1.15*r*r);
-
 return clamp(shells * petals * envelope, 0.0, 1.0);
 ```
 
@@ -352,7 +331,7 @@ Let
 $$
 \rho=\sqrt{x^2+z^2},
 \qquad
-\alpha=\operatorname{atan2}(z,x),
+\alpha=\mathrm{atan2}(z,x),
 \qquad
 u=\rho-0.52,
 $$
@@ -393,37 +372,28 @@ Therefore,
 
 $$
 f(x,y,z,t)=
-\operatorname{clamp}(SWB,0,1).
+\mathrm{clamp}(SWB,0,1).
 $$
 
 ```glsl
 vec3 q = vec3(x, y, z);
-
 float R = 0.52;
-
 float rho = length(q.xz);
 float ang = atan(q.z, q.x);
-
 float u = rho - R;
-
 float twist = 0.5*ang + 0.35*t;
-
 float ct = cos(twist);
 float st = sin(twist);
-
 float a = q.y*ct - u*st;
 float b = q.y*st + u*ct;
-
 float sheet = exp(-260.0*a*a);
 float width = exp(-24.0*b*b);
-
 float stripes =
     0.55 +
     0.45*pow(
         0.5 + 0.5*cos(8.0*ang - 2.0*t),
         4.0
     );
-
 return clamp(sheet * width * stripes, 0.0, 1.0);
 ```
 
@@ -435,11 +405,12 @@ $$
 \alpha=0.12t
 $$
 
-and rotate the \(xz\)-plane according to
+and rotate the $xz$-plane according to
 
 $$
 \begin{pmatrix}
-q_x\\q_z
+q_x\\
+q_z
 \end{pmatrix}
 =
 \begin{pmatrix}
@@ -447,7 +418,8 @@ q_x\\q_z
 -\sin\alpha & \cos\alpha
 \end{pmatrix}
 \begin{pmatrix}
-x\\z
+x\\
+z
 \end{pmatrix},
 \qquad
 q_y=y.
@@ -458,7 +430,7 @@ Define
 $$
 r=\sqrt{q_x^2+q_z^2}+10^{-4},
 \qquad
-\theta=\operatorname{atan2}(q_z,q_x).
+\theta=\mathrm{atan2}(q_z,q_x).
 $$
 
 The spiral modulation is
@@ -487,14 +459,14 @@ Let
 
 $$
 u=
-\operatorname{clamp}
+\mathrm{clamp}
 \left(
 \frac{r-0.18}{0.11},
 0,1
 \right),
 $$
 
-so that the GLSL `smoothstep` term is
+so that the GLSL \`smoothstep\` term is
 
 $$
 H=u^2(3-2u).
@@ -515,7 +487,7 @@ Finally,
 
 $$
 f(x,y,z,t)=
-\operatorname{clamp}\left(
+\mathrm{clamp}\left(
 DH+0.9P+0.32J,
 0,1
 \right).
@@ -523,45 +495,34 @@ $$
 
 ```glsl
 vec3 q = vec3(x, y, z);
-
 float a = 0.12 * t;
-
 float ca = cos(a);
 float sa = sin(a);
-
 q.xz = mat2(ca, -sa, sa, ca) * q.xz;
-
 float r = length(q.xz) + 0.0001;
 float ang = atan(q.z, q.x);
-
 float spiral =
     0.45 +
     0.55 * pow(
         0.5 + 0.5*sin(11.0*ang - 18.0*r + 2.2*t),
         3.0
     );
-
 float disk =
     exp(-100.0*q.y*q.y) *
     exp(-7.0*pow(r - 0.48, 2.0)) *
     spiral;
-
 float photonRing =
     exp(-350.0*pow(r - 0.27, 2.0)) *
     exp(-180.0*q.y*q.y);
-
 float hole = smoothstep(0.18, 0.29, r);
-
 float jet =
     exp(-40.0*(q.x*q.x + q.z*q.z)) *
     exp(-1.4*q.y*q.y) *
     (0.55 + 0.45*pow(sin(11.0*q.y - 3.0*t), 2.0));
-
 float density =
       disk * hole
     + 0.9 * photonRing
     + 0.32 * jet;
-
 return clamp(density, 0.0, 1.0);
 ```
 
@@ -607,29 +568,22 @@ Then
 
 $$
 f(x,y,z,t)=
-\operatorname{clamp}(SHP,0,1).
+\mathrm{clamp}(SHP,0,1).
 $$
 
 ```glsl
 float ph = 0.45 * t;
-
 float X = 4.5*x + ph;
 float Y = 4.5*y - 0.7*ph;
 float Z = 4.5*z + 0.4*ph;
-
 float d =
       sin(X)*sin(Y)*sin(Z)
     + sin(X)*cos(Y)*cos(Z)
     + cos(X)*sin(Y)*cos(Z)
     + cos(X)*cos(Y)*sin(Z);
-
 float shell = exp(-35.0 * d*d);
-
 float r = length(vec3(x,y,z));
-
 float halo = exp(-0.28 * r*r);
-
 float pulse = 0.75 + 0.25*sin(2.5*t + 8.0*r);
-
 return clamp(shell * halo * pulse, 0.0, 1.0);
 ```
