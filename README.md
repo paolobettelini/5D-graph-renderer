@@ -329,72 +329,356 @@ return clamp(shells * petals * envelope, 0.0, 1.0);
 Let
 
 $$
-\rho=\sqrt{x^2+z^2},
+\phi=\operatorname{atan2}(y,x)+0.30t,
 \qquad
-\alpha=\mathrm{atan2}(z,x),
-\qquad
+\rho=\sqrt{x^2+y^2}.
+$$
+
+Define
+
+$$
 u=\rho-0.52,
+\qquad
+v=z,
+\qquad
+h=\frac{\phi}{2}.
+$$
+
+Let
+
+$$
+n=
+\left|
+v\cos h-u\sin h
+\right|,
 $$
 
 and
 
 $$
-\tau=\frac{\alpha}{2}+0.35t.
+a=
+u\cos h+v\sin h.
 $$
 
-Define the rotated coordinates
+To reproduce the GLSL smoothstep term, define
 
 $$
-a=y\cos\tau-u\sin\tau,
-\qquad
-b=y\sin\tau+u\cos\tau.
+s=
+\operatorname{clamp}
+\left(
+\frac{|a|-0.18}{0.05},
+0,1
+\right),
+$$
+
+and
+
+$$
+W=1-s^2(3-2s).
+$$
+
+The sheet density is
+
+$$
+S=e^{-650n^2}W.
+$$
+
+For the outer rim, define
+
+$$
+d_e=
+\left|
+|a|-0.20
+\right|,
+$$
+
+and
+
+$$
+R=
+e^{-650n^2}
+e^{-500d_e^2}.
 $$
 
 Then
 
 $$
-S=e^{-260a^2},
+f(x,y,z,t)=
+\mathrm{clamp}\left(
+0.55S+R,
+0,1
+\right).
+$$
+
+```glsl
+float phi = atan(y, x) + 0.30 * t;
+float rho = length(vec2(x, y));
+
+float u = rho - 0.52;
+float v = z;
+
+float h = 0.5 * phi;
+float ch = cos(h);
+float sh = sin(h);
+
+float normalDist = abs(v * ch - u * sh);
+float across = u * ch + v * sh;
+
+float widthMask =
+    1.0 - smoothstep(0.18, 0.23, abs(across));
+
+float sheet =
+    exp(-650.0 * normalDist * normalDist)
+    * widthMask;
+
+float edgeDist = abs(abs(across) - 0.20);
+
+float rim =
+    exp(-650.0 * normalDist * normalDist)
+    * exp(-500.0 * edgeDist * edgeDist);
+
+return clamp(0.55 * sheet + rim, 0.0, 1.0);
+```
+
+## Trefoil knot
+
+Let
+
+$$
+\alpha=0.18t
+$$
+
+and rotate the $xy$-plane according to
+
+$$
+\begin{pmatrix}
+\cos\alpha & \sin\alpha\
+-\sin\alpha & \cos\alpha
+\end{pmatrix}
+\begin{pmatrix}
+x\
+y
+\end{pmatrix},
 \qquad
-W=e^{-24b^2},
+q_z=z.
+$$
+
+Let
+
+$$
+R=0.52,
+\qquad
+r_0=0.22,
+$$
+
+and define
+
+$$
+\rho=\sqrt{q_x^2+q_y^2},
+$$
+
+$$
+\phi=\operatorname{atan2}(q_y,q_x),
 $$
 
 and
 
 $$
-B=
-0.55+
-0.45\left(
-\frac12+\frac12\cos(8\alpha-2t)
-\right)^4.
+\theta=
+\operatorname{atan2}
+\left(
+q_z,\rho-R
+\right).
 $$
 
-Therefore,
+The distance from the torus surface is
 
 $$
-f(x,y,z,t)=
-\mathrm{clamp}(SWB,0,1).
+d_r=
+\left|
+\sqrt{(\rho-R)^2+q_z^2}
+-r_0
+\right|.
+$$
+
+Define the phase
+
+$$
+\Psi=
+3\phi-2\theta-0.55t,
+$$
+
+and
+
+$$
+d_\phi=
+1-\cos\Psi.
+$$
+
+Then
+
+$$
+\exp\left(
+-800d_r^2
+-7d_\phi
+\right).
 $$
 
 ```glsl
 vec3 q = vec3(x, y, z);
+
+float rot = 0.18 * t;
+float cr = cos(rot);
+float sr = sin(rot);
+
+q.xy = mat2(cr, -sr, sr, cr) * q.xy;
+
 float R = 0.52;
-float rho = length(q.xz);
-float ang = atan(q.z, q.x);
-float u = rho - R;
-float twist = 0.5*ang + 0.35*t;
-float ct = cos(twist);
-float st = sin(twist);
-float a = q.y*ct - u*st;
-float b = q.y*st + u*ct;
-float sheet = exp(-260.0*a*a);
-float width = exp(-24.0*b*b);
-float stripes =
-    0.55 +
-    0.45*pow(
-        0.5 + 0.5*cos(8.0*ang - 2.0*t),
-        4.0
+float r = 0.22;
+
+float rho = length(q.xy);
+
+float phi = atan(q.y, q.x);
+float theta = atan(q.z, rho - R);
+
+float torusCoord =
+    length(vec2(rho - R, q.z));
+
+float radialDist = abs(torusCoord - r);
+
+float phase =
+    3.0 * phi -
+    2.0 * theta -
+    0.55 * t;
+
+float phaseDist = 1.0 - cos(phase);
+
+float density =
+    exp(
+        -800.0 * radialDist * radialDist
+        -7.0 * phaseDist
     );
-return clamp(sheet * width * stripes, 0.0, 1.0);
+
+return density;
+```
+
+## Organic sphere
+
+Let
+
+$$
+\mathbf q=
+\begin{pmatrix}
+x\
+y\
+z
+\end{pmatrix},
+$$
+
+and define
+
+$$
+r=\lVert\mathbf q\rVert+10^{-4},
+\qquad
+\phi=\operatorname{atan2}(y,x),
+\qquad
+\theta=
+\arccos\left(
+\mathrm{clamp}
+\left(
+\frac{z}{r},
+-1,1
+\right)
+\right).
+$$
+
+The time-dependent deformation is
+
+$$
+\begin{aligned}
+\delta(\phi,\theta,t)
+={}&
+0.055
+\sin(7\phi+1.2t)
+\sin(5\theta-0.7t)
+\
+&+
+0.035
+\cos(11\phi-3\theta+0.4t)
+\
+&+
+0.020
+\sin(17\theta+t).
+\end{aligned}
+$$
+
+The target radius is
+
+0.48+\delta(\phi,\theta,t).
+$$
+
+Define
+
+$$
+d=
+\left|
+r-R(\phi,\theta,t)
+\right|,
+$$
+
+and
+
+$$
+S=e^{-550d^2}.
+$$
+
+The shimmering modulation is
+
+0.70+
+0.30
+\sin\left(
+16\phi+9\theta-2t
+\right).
+$$
+
+Then
+
+$$
+S,M(\phi,\theta,t).
+$$
+
+```glsl
+vec3 q = vec3(x, y, z);
+
+float r = length(q) + 0.0001;
+
+float az = atan(q.y, q.x);
+float el = acos(clamp(q.z / r, -1.0, 1.0));
+
+float deformation =
+      0.055 * sin(7.0 * az + 1.2 * t)
+                  * sin(5.0 * el - 0.7 * t)
+    + 0.035 * cos(11.0 * az - 3.0 * el + 0.4 * t)
+    + 0.020 * sin(17.0 * el + t);
+
+float target =
+    0.48 + deformation;
+
+float d =
+    abs(r - target);
+
+float shell =
+    exp(-550.0 * d * d);
+
+float shimmer =
+    0.70 +
+    0.30 * sin(
+        16.0 * az +
+        9.0 * el -
+        2.0 * t
+    );
+
+return shell * shimmer;
 ```
 
 ## Black hole + accretion disk
