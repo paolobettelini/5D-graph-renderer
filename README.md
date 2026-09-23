@@ -329,7 +329,7 @@ return clamp(shells * petals * envelope, 0.0, 1.0);
 Let
 
 $$
-\phi=\operatorname{atan2}(y,x)+0.30t,
+\phi=\text{atan2}(y,x)+0.30t,
 \qquad
 \rho=\sqrt{x^2+y^2}.
 $$
@@ -364,7 +364,7 @@ To reproduce the GLSL smoothstep term, define
 
 $$
 s=
-\operatorname{clamp}
+\text{clamp}
 \left(
 \frac{|a|-0.18}{0.05},
 0,1
@@ -478,14 +478,14 @@ $$
 $$
 
 $$
-\phi=\operatorname{atan2}(q_y,q_x),
+\phi=\text{atan2}(q_y,q_x),
 $$
 
 and
 
 $$
 \theta=
-\operatorname{atan2}
+\text{atan2}
 \left(
 q_z,\rho-R
 \right).
@@ -580,7 +580,7 @@ and define
 $$
 r=\lVert\mathbf q\rVert+10^{-4},
 \qquad
-\phi=\operatorname{atan2}(y,x),
+\phi=\text{atan2}(y,x),
 \qquad
 \theta=
 \arccos\left(
